@@ -1,17 +1,3 @@
-"""
-Trabalho 01 - Envelope Digital Assinado (Encrypt-then-Sign)
-Módulo: Criptografia Simétrica, Codificações, I/O e JSON
-
-Segue estritamente o protocolo do enunciado:
-  - AES-256-CBC com padding PKCS#7
-  - Chave de sessão: 32 bytes aleatórios | IV: 16 bytes aleatórios
-  - Codificação textual: "Base64" ou "Hex" (aplicada a todos os campos do envelope)
-  - Envelope em arquivo JSON único, com as seções "parametros" e "envelope"
-  - Erros tratados com EnvelopeError (nunca exceções não tratadas na interface)
-
-Biblioteca de criptografia: cryptography (https://cryptography.io)
-"""
-
 import base64
 import binascii
 import json
@@ -20,9 +6,6 @@ import os
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-# --------------------------------------------------------------------------
-# Constantes do protocolo
-# --------------------------------------------------------------------------
 TAMANHO_CHAVE = 32   # AES-256 -> 256 bits = 32 bytes
 TAMANHO_IV = 16      # 128 bits = 16 bytes
 TAMANHO_BLOCO = 128  # bits (PKCS#7 para AES)
@@ -30,7 +13,6 @@ TAMANHO_BLOCO = 128  # bits (PKCS#7 para AES)
 CODIFICACOES_VALIDAS = ("Base64", "Hex")
 HASHES_VALIDOS = ("SHA-256", "SHA-512")
 
-# Campos fixos exigidos pelo padrão JSON (seção 4.1 do enunciado)
 ALGORITMO_SIMETRICO = "AES-256-CBC"
 PADDING_SIMETRICO = "PKCS7"
 ALGORITMO_CHAVE = "RSA-OAEP"
@@ -51,10 +33,6 @@ CAMPOS_ENVELOPE = ("iv", "chave_sessao", "mensagem_cifrada", "assinatura")
 class EnvelopeError(Exception):
     """Erro tratável, com mensagem pensada para o usuário corrigir o problema."""
 
-
-# --------------------------------------------------------------------------
-# Codificações (Base64 / Hex)
-# --------------------------------------------------------------------------
 def validar_codificacao(codificacao: str) -> str:
     if codificacao not in CODIFICACOES_VALIDAS:
         raise EnvelopeError(
@@ -65,7 +43,6 @@ def validar_codificacao(codificacao: str) -> str:
 
 
 def codificar(dados: bytes, codificacao: str) -> str:
-    """bytes -> texto ASCII na codificação escolhida (Base64 padrão com '=' ou Hex minúsculo)."""
     validar_codificacao(codificacao)
     if not isinstance(dados, (bytes, bytearray)):
         raise EnvelopeError("Os dados a codificar devem ser bytes.")
@@ -75,7 +52,6 @@ def codificar(dados: bytes, codificacao: str) -> str:
 
 
 def decodificar(texto: str, codificacao: str, nome_campo: str = "campo") -> bytes:
-    """texto -> bytes. Rejeita entradas malformadas com mensagem clara."""
     validar_codificacao(codificacao)
     if not isinstance(texto, str):
         raise EnvelopeError(f"O {nome_campo} deve ser uma string em {codificacao}.")
@@ -90,23 +66,13 @@ def decodificar(texto: str, codificacao: str, nome_campo: str = "campo") -> byte
             f"codificação diferente da declarada em 'parametros.codificacao')."
         )
 
-
-# --------------------------------------------------------------------------
-# Geração de segredos
-# --------------------------------------------------------------------------
 def gerar_chave_sessao() -> bytes:
-    """Chave simétrica AES de 256 bits (32 bytes) via CSPRNG do sistema."""
     return os.urandom(TAMANHO_CHAVE)
 
 
 def gerar_iv() -> bytes:
-    """Vetor de inicialização de 128 bits (16 bytes) via CSPRNG do sistema."""
     return os.urandom(TAMANHO_IV)
 
-
-# --------------------------------------------------------------------------
-# AES-256-CBC com PKCS#7
-# --------------------------------------------------------------------------
 def _validar_chave_iv(chave: bytes, iv: bytes) -> None:
     if len(chave) != TAMANHO_CHAVE:
         raise EnvelopeError(
@@ -120,7 +86,6 @@ def _validar_chave_iv(chave: bytes, iv: bytes) -> None:
 
 
 def cifrar_aes_cbc(texto_claro: bytes, chave: bytes, iv: bytes) -> bytes:
-    """Aplica padding PKCS#7 e cifra com AES-256-CBC. Retorna o criptograma (bytes)."""
     _validar_chave_iv(chave, iv)
     try:
         padder = padding.PKCS7(TAMANHO_BLOCO).padder()
@@ -132,7 +97,6 @@ def cifrar_aes_cbc(texto_claro: bytes, chave: bytes, iv: bytes) -> bytes:
 
 
 def decifrar_aes_cbc(criptograma: bytes, chave: bytes, iv: bytes) -> bytes:
-    """Decifra AES-256-CBC e remove o padding PKCS#7. Retorna o texto em claro (bytes)."""
     _validar_chave_iv(chave, iv)
     if len(criptograma) == 0 or len(criptograma) % 16 != 0:
         raise EnvelopeError(
@@ -152,10 +116,6 @@ def decifrar_aes_cbc(criptograma: bytes, chave: bytes, iv: bytes) -> bytes:
     except Exception as e:
         raise EnvelopeError(f"Falha ao decifrar a mensagem com AES-256-CBC: {e}")
 
-
-# --------------------------------------------------------------------------
-# I/O de arquivos
-# --------------------------------------------------------------------------
 def ler_texto_utf8(caminho: str) -> bytes:
     """Lê o arquivo de texto em claro e garante que é UTF-8 válido. Retorna bytes."""
     try:
@@ -177,7 +137,6 @@ def ler_texto_utf8(caminho: str) -> bytes:
 
 
 def gravar_arquivo(caminho: str, dados: bytes) -> None:
-    """Grava bytes em arquivo, com tratamento de erros de E/S."""
     try:
         with open(caminho, "wb") as f:
             f.write(dados)
@@ -190,10 +149,6 @@ def gravar_arquivo(caminho: str, dados: bytes) -> None:
     except OSError as e:
         raise EnvelopeError(f"Erro ao gravar {caminho!r}: {e.strerror or e}.")
 
-
-# --------------------------------------------------------------------------
-# JSON do envelope (seção 4 do enunciado)
-# --------------------------------------------------------------------------
 def montar_envelope(
     iv: str,
     chave_sessao: str,
@@ -203,7 +158,6 @@ def montar_envelope(
     hash_oaep: str = "SHA-256",
     hash_assinatura: str = "SHA-256",
 ) -> dict:
-    """Monta o dicionário no padrão JSON de interoperabilidade (campos já codificados)."""
     validar_codificacao(codificacao)
     for nome, valor in (("hash_oaep", hash_oaep), ("hash_assinatura", hash_assinatura)):
         if valor not in HASHES_VALIDOS:
@@ -230,7 +184,6 @@ def montar_envelope(
 
 
 def salvar_envelope_json(caminho: str, envelope: dict) -> None:
-    """Grava o envelope em um único arquivo JSON (UTF-8, indentado)."""
     try:
         texto = json.dumps(envelope, indent=2, ensure_ascii=False)
     except (TypeError, ValueError) as e:
@@ -239,7 +192,6 @@ def salvar_envelope_json(caminho: str, envelope: dict) -> None:
 
 
 def carregar_envelope_json(caminho: str) -> dict:
-    """Lê o JSON do envelope e valida estrutura, campos fixos e codificação."""
     bruto = ler_texto_utf8(caminho)
     try:
         env = json.loads(bruto.decode("utf-8"))
@@ -252,7 +204,6 @@ def carregar_envelope_json(caminho: str) -> dict:
 
 
 def validar_envelope(env: dict) -> None:
-    """Valida o envelope conforme a seção 4.1 do enunciado."""
     if not isinstance(env, dict):
         raise EnvelopeError("O JSON do envelope deve ser um objeto na raiz.")
     for secao, campos in (("parametros", CAMPOS_PARAMETROS), ("envelope", CAMPOS_ENVELOPE)):
@@ -287,18 +238,8 @@ def validar_envelope(env: dict) -> None:
         if not isinstance(env["envelope"][campo], str):
             raise EnvelopeError(f"envelope.{campo} deve ser uma string.")
 
-
-# --------------------------------------------------------------------------
-# Fluxo simétrico completo (usado pelas etapas RSA/assinatura do grupo)
-# --------------------------------------------------------------------------
 def cifrar_mensagem(texto_claro: bytes, codificacao: str):
-    """
-    Gera chave de sessão + IV e cifra a mensagem.
-    Retorna (chave_bytes, iv_bytes, iv_codificado, chave_codificada, mensagem_cifrada_codificada).
 
-    Atenção ao protocolo: no passo 3 do enunciado, o que o RSA-OAEP cifra é a
-    chave de sessão JÁ CODIFICADA (chave_codificada, em ASCII), não os bytes crus.
-    """
     validar_codificacao(codificacao)
     chave = gerar_chave_sessao()
     iv = gerar_iv()
@@ -314,7 +255,6 @@ def cifrar_mensagem(texto_claro: bytes, codificacao: str):
 
 def decifrar_mensagem(mensagem_cifrada: str, chave_codificada: str, iv_codificado: str,
                       codificacao: str) -> bytes:
-    """Decodifica chave/IV/criptograma e decifra. Retorna o texto em claro (bytes)."""
     chave = decodificar(chave_codificada, codificacao, "chave de sessão")
     iv = decodificar(iv_codificado, codificacao, "iv")
     criptograma = decodificar(mensagem_cifrada, codificacao, "mensagem_cifrada")
